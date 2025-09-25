@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<head>
+  <title>Company Org Chart — Force Layout</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+    .bounding-container {
+      position: relative;
+      width: 1500px;
+      height: 800px;
+      display: flex;
+    }
+    .main-chart {
+      flex: 1;
+      position: relative;
+    }
+    .sidebar {
+      width: 300px;
+      background: #fff;
+      border-left: 2px solid #ddd;
+      padding: 20px;
+      box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+    }
+    .sidebar.hidden {
+      display: none;
+    }
+    .person-image {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: #f0f0f0;
+      border: 3px solid #ddd;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      color: #888;
+      margin-bottom: 20px;
+    }
+    .person-details {
+      text-align: center;
+      width: 100%;
+    }
+    .person-name {
+      font-size: 24px;
+      font-weight: bold;
+      color: #333;
+      margin-bottom: 10px;
+    }
+    .person-role {
+      font-size: 16px;
+      color: #666;
+      line-height: 1.4;
+      margin-bottom: 15px;
+    }
+    .sidebar-placeholder {
+      color: #999;
+      font-style: italic;
+      text-align: center;
+      margin-top: 50px;
+    }
+    .controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+    .controls button {
+      padding: 6px 10px;
+      border: none;
+      border-radius: 6px;
+      background: #333;
+      color: #fff;
+      cursor: pointer;
+    }
+    .controls button:hover { background: #555; }
+    .controls .toggle-btn.active { background: #007acc; }
+    .controls .toggle-btn.active:hover { background: #005a99; }
+
+    .tooltip {
+      position: absolute;
+      text-align: left;
+      padding: 8px;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      pointer-events: none;
+      opacity: 0;
+      font-size: 14px;
+      max-width: 260px;
+      box-shadow: 0 6px 20px rgba(0,0,0,.08);
+    }
+  </style>
+</head>
+<body>
+<div class="bounding-container">
+  <div class="main-chart">
+    <div class="controls">
+      <button id="resetBtn">Reset Highlight</button>
+      <button id="jiggleBtn">Jiggle</button>
+      <button id="byNameBtn" class="toggle-btn active">By Name</button>
+      <button id="byRoleBtn" class="toggle-btn">By Role</button>
+    </div>
+    <div class="tooltip" id="tooltip" style="display:none"></div>
+  </div>
+  <div class="sidebar" id="sidebar">
+    <div class="person-image" id="personImage">👤</div>
+    <div class="person-details">
+      <div class="person-name" id="personName">Select a person</div>
+      <div class="person-role" id="personRole">Drag any node to see details</div>
+    </div>
+  </div>
+  <script>
+  // =============================
+  // 1) ORG DATA (edit to your team)
+  // =============================
+//   var orgData = [
+//     { id: "managing_director", name: "Paul Smith", position: "Managing Director", parent: null },
+//     { id: "ceo", name: "Alice Johnson", position: "CEO", parent: "managing_director" },
+//     { id: "md", name: "Robert Smith", position: "Managing Director", parent: "ceo" },
+//     { id: "cto", name: "Karen Lee", position: "CTO", parent: "ceo" },
+//     { id: "cfo", name: "David Brown", position: "CFO", parent: "ceo" },
+//     { id: "hr", name: "Noor Khan", position: "Head of HR", parent: "md" },
+//     { id: "ops", name: "Liam Patel", position: "Operations Lead", parent: "md" },
+//     { id: "eng1", name: "Sophia Green", position: "Engineering Manager", parent: "cto" },
+//     { id: "eng2", name: "Michael White", position: "Senior Engineer", parent: "cto" },
+//     { id: "eng3", name: "Jason Park", position: "QA Lead", parent: "cto" },
+//     { id: "fin1", name: "Emma Wilson", position: "Finance Manager", parent: "cfo" },
+//     { id: "fin2", name: "Ivy Chen", position: "Accounts Analyst", parent: "cfo" }
+//   ];
+
+var orgData = [
+  { id: "governing_board", name: "Governing Board", position: "Governing Board", parent: null },
+
+  { id: "managing_director", name: "Paul Smith", position: "Managing Director (SLT)", parent: "governing_board" },
+  { id: "ceo", name: "Luke Hardy", position: "CEO", parent: "managing_director" },
+  { id: "head_quality_ops", name: "Charlie Dew", position: "Head of Quality and Operations (SLT)", parent: "ceo" },
+  { id: "fs_aeb_manager", name: "Stacey Powell", position: "Functional Skills and AEB Manager (SLT)", parent: "ceo" },
+  { id: "commercial_fs_manager", name: "David Harvey", position: "Commercial Functional Skills Manager (SLT)", parent: "ceo" },
+  { id: "quality_coordinator", name: "Tom Barnes", position: "Quality Co-ordinator (SLT)", parent: "ceo" },
+  { id: "ktp_associate", name: "Haseeb Akhlaq", position: "AI KTP Associate", parent: "ceo" },
+
+  // Quality branch
+  { id: "apprenticeship_coordinator", name: "Julia Hardy", position: "Apprenticeship Co-ordinator / Well Being Officer", parent: "quality_coordinator" },
+  { id: "business_dev", name: "Debbie Kelly", position: "Business Development / Short Course Assessor / IAG Champion", parent: "quality_coordinator" },
+  { id: "tutor1", name: "Orsi Jakab", position: "Vocational Tutor / Assessor", parent: "quality_coordinator" },
+  { id: "tutor2", name: "Jordan Milton-Hines", position: "Vocational Tutor / Assessor", parent: "quality_coordinator" },
+  { id: "tutor3", name: "Laura Pridley", position: "Vocational Tutor / Assessor", parent: "quality_coordinator" },
+  { id: "vocational_tutors", name: "Sessional PT/Freelance x 6", position: "Vocational Tutors", parent: "quality_coordinator" },
+
+  // Data & Office branch
+  { id: "data_compliance", name: "Jessica Riley", position: "Data and Compliance Co-ordinator", parent: "quality_coordinator" },
+  { id: "office_coordinator", name: "Jessica Folkes", position: "Office Co-ordinator", parent: "quality_coordinator" },
+  { id: "office_apprentice", name: "Office Customer Service Apprentice", position: "NEW POST SEPT 2025", parent: "quality_coordinator" },
+
+  // FS & AEB Manager branch
+  { id: "fs_admin", name: "Czarmiane Cortel", position: "FS Admin Assistant", parent: "fs_aeb_manager" },
+  { id: "fs_tutor", name: "Steve Henman", position: "Functional Skills Tutor", parent: "fs_aeb_manager" },
+  { id: "fs_account_lead", name: "Tom Wood", position: "Functional Skills Account Lead", parent: "fs_aeb_manager" },
+  { id: "self_employed_fs", name: "Self-employed Tutors x 7", position: "Functional Skills Tutors", parent: "fs_aeb_manager" },
+
+  // Commercial FS Manager branch
+  { id: "esol_liaison", name: "Valeria Rafla", position: "ESOL Community Liaison / ESOL Tutor", parent: "commercial_fs_manager" },
+  { id: "esol_admin", name: "Maryna Chaika", position: "ESOL Admin Assistant", parent: "commercial_fs_manager" },
+
+  // ESOL Tutors branch
+  { id: "esol_coordinator", name: "ESOL Coordinator", position: "NEW POST SEPT 2025", parent: "commercial_fs_manager" },
+  { id: "esol_tutor1", name: "Mariam Obierd", position: "ESOL Tutor", parent: "esol_coordinator" },
+  { id: "esol_tutor2", name: "Darria Semencko", position: "ESOL Tutor", parent: "esol_coordinator" },
+  { id: "esol_tutor3", name: "Iryna Rice", position: "ESOL Tutor", parent: "esol_coordinator" },
+
+  // External & Accounts
+  { id: "accounts", name: "Heather Bright", position: "FSUK Accounts", parent: "managing_director" },
+  { id: "sales_exec", name: "Kyle Young", position: "AEB National Sales Executive / Partnerships Manager", parent: "ceo" },
+  { id: "adult_edu", name: "Amir Bahrami", position: "Consultant Lead Adult Education (SLT)", parent: "commercial_fs_manager" }
+];
+
+
+
+  // =============================
+  // 2) BUILD HIERARCHY + LOOKUPS
+  // =============================
+  var root = d3.stratify()
+    .id(function(d){ return d.id; })
+    .parentId(function(d){ return d.parent; })(orgData);
+
+  var idToNode = new Map(root.descendants().map(function(n){ return [n.id, n]; }));
+  var linksTree = root.links().map(function(l){ return { source: l.source.id, target: l.target.id }; });
+
+  // =============================
+  // 3) FORCE LAYOUT (w/ lively motion)
+  // =============================
+  var width = 1200, height = 800;
+  var svg = d3.select('.main-chart').append('svg')
+    .attr('width', width).attr('height', height);
+
+  svg.append('rect')
+    .attr('x', 0).attr('y', 0)
+    .attr('width', width).attr('height', height)
+    .attr('fill', 'none').attr('stroke', '#bbb').attr('stroke-dasharray', '6,6');
+
+  var nodes = root.descendants().map(function(d){
+    // Calculate radius based on hierarchy depth - higher positions get larger circles
+    var baseRadius = 60;
+    var radiusReduction = 6;
+    var hierarchyRadius = Math.max(35, baseRadius - (d.depth * radiusReduction));
+    
+    return {
+      id: d.id,
+      name: d.data.name,
+      position: d.data.position,
+      parent: d.data.parent,
+      depth: d.depth,
+      radius: hierarchyRadius
+    };
+  });
+
+  var links = linksTree.map(function(l){
+    return {
+      source: l.source,
+      target: l.target,
+      distance: idToNode.get(l.target).depth <= 1 ? 180 : 140
+    };
+  });
+
+  var sim = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(function(d){ return d.id; }).distance(function(d){ return d.distance; }).strength(0.6))
+    .force('charge', d3.forceManyBody().strength(-450))
+    .force('center', d3.forceCenter(width/2, height/2))
+    .force('collision', d3.forceCollide().radius(function(d){ return d.radius + 8; }))
+    .velocityDecay(0.35);
+
+  // =============================
+  // 4) DRAW LINKS + NODES
+  // =============================
+  var linkG = svg.append('g').attr('stroke', '#999').attr('stroke-opacity', 0.7);
+  var nodeG = svg.append('g');
+
+  var link = linkG.selectAll('line')
+    .data(links)
+    .enter().append('line')
+    .attr('stroke-width', 2);
+
+  var node = nodeG.selectAll('.node')
+    .data(nodes)
+    .enter().append('g')
+    .attr('class', 'node')
+    .style('cursor', 'pointer')
+    .call(d3.drag()
+      .on('start', dragStarted)
+      .on('drag', dragged)
+      .on('end', dragEnded))
+    .on('click', function(event, d){ 
+      highlightSubtree(d.id);
+      updateSidebar(d);
+    });
+
+  var circle = node.append('circle')
+    .attr('r', function(d){ return d.radius; })
+    .attr('fill', function(d){ return depthFill(idToNode.get(d.id).depth); })
+    .attr('stroke', '#111')
+    .attr('stroke-width', 1.5)
+    .attr('filter', 'drop-shadow(0 4px 10px rgba(0,0,0,.12))');
+
+  // Single text element that will be dynamically updated
+  var nodeText = node.append('text')
+    .attr('text-anchor', 'middle')
+    .attr('dy', '0.35em')
+    .style('font-size', function(d) {
+      // Scale font size based on circle size
+      return Math.max(9, Math.min(14, d.radius * 0.25)) + 'px';
+    })
+    .style('font-weight', '600')
+    .style('fill', '#333')
+    .style('pointer-events', 'none')
+    .each(function(d) {
+      // Wrap text to fit inside circle
+      wrapText(d3.select(this), d.name, d.radius * 1.6);
+    });
+
+  var tooltip = d3.select('#tooltip');
+  node.on('mouseover', function(event, d){
+    tooltip.style('opacity', 1).style('display', 'block')
+      .html('<strong>' + d.name + '</strong><br/>' + d.position);
+  }).on('mousemove', function(event){
+    tooltip.style('left', (event.pageX + 12) + 'px')
+           .style('top', (event.pageY + 12) + 'px');
+  }).on('mouseout', function(){
+    tooltip.style('opacity', 0).style('display', 'none');
+  });
+
+  sim.on('tick', function(){
+    nodes.forEach(function(n){
+      if (n.x - n.radius < 0) { n.x = n.radius; n.vx = -n.vx * 0.9; }
+      if (n.x + n.radius > width) { n.x = width - n.radius; n.vx = -n.vx * 0.9; }
+      if (n.y - n.radius < 0) { n.y = n.radius; n.vy = -n.vy * 0.9; }
+      if (n.y + n.radius > height) { n.y = height - n.radius; n.vy = -n.vy * 0.9; }
+    });
+
+    link
+      .attr('x1', function(d){ return d.source.x; })
+      .attr('y1', function(d){ return d.source.y; })
+      .attr('x2', function(d){ return d.target.x; })
+      .attr('y2', function(d){ return d.target.y; });
+
+    node.attr('transform', function(d){ return 'translate(' + d.x + ',' + d.y + ')'; });
+  });
+
+  // =============================
+  // 5) HIGHLIGHT LOGIC
+  // =============================
+  var highlighted = null;
+
+  function highlightSubtree(rootId){
+    highlighted = rootId;
+    var ids = new Set(idToNode.get(rootId).descendants().map(function(n){ return n.id; }));
+
+    node.style('opacity', 0.15);
+    link.style('opacity', 0.1);
+
+    node.filter(function(d){ return ids.has(d.id); })
+      .style('opacity', 1)
+      .select('circle')
+      .attr('fill', function(d){ return lighten(depthFill(idToNode.get(d.id).depth), 0.6); });
+
+    link.filter(function(l){ return ids.has(l.source.id) && ids.has(l.target.id); })
+      .style('opacity', 0.9)
+      .attr('stroke', '#333');
+  }
+
+  function resetHighlight(){
+    highlighted = null;
+    node.style('opacity', 1);
+    link.style('opacity', 0.7).attr('stroke', '#999');
+    circle.attr('fill', function(d){ return depthFill(idToNode.get(d.id).depth); });
+  }
+
+  // =============================
+  // 6) SIDEBAR FUNCTIONALITY
+  // =============================
+  function updateSidebar(nodeData) {
+    document.getElementById('personName').textContent = nodeData.name;
+    document.getElementById('personRole').textContent = nodeData.position;
+    
+    // Generate initials for the image placeholder
+    var initials = nodeData.name.split(' ').map(function(word) {
+      return word.charAt(0).toUpperCase();
+    }).join('');
+    
+    // Limit to 2-3 initials for better display
+    if (initials.length > 3) {
+      initials = initials.substring(0, 3);
+    }
+    
+    document.getElementById('personImage').textContent = initials;
+  }
+
+  function clearSidebar() {
+    document.getElementById('personName').textContent = 'Select a person';
+    document.getElementById('personRole').textContent = 'Drag any node to see details';
+    document.getElementById('personImage').textContent = '👤';
+  }
+
+  // =============================
+  // 7) TEXT DISPLAY & TOGGLE LOGIC
+  // =============================
+  var displayMode = 'name'; // 'name' or 'role'
+
+  function wrapText(textElement, text, maxWidth) {
+    // Clear all existing content
+    textElement.text('').selectAll('tspan').remove();
+    
+    var words = text.split(/\s+/);
+    var lines = [];
+    var currentLine = [];
+    
+    // Simple approach: if text is too long, break at reasonable points
+    if (words.length <= 2) {
+      // Short text, display as is
+      textElement.text(text);
+      return;
+    }
+    
+    // For longer text, try to break into 2-3 lines
+    var wordsPerLine = Math.ceil(words.length / 2);
+    for (var i = 0; i < words.length; i++) {
+      currentLine.push(words[i]);
+      if (currentLine.length >= wordsPerLine || i === words.length - 1) {
+        lines.push(currentLine.join(' '));
+        currentLine = [];
+      }
+    }
+    
+    // Add each line as a tspan
+    for (var j = 0; j < lines.length; j++) {
+      textElement.append('tspan')
+        .attr('x', 0)
+        .attr('dy', j === 0 ? '0em' : '1.2em')
+        .text(lines[j]);
+    }
+  }
+
+
+  function updateTextDisplay() {
+    nodeText.selectAll('tspan').remove();
+    nodeText.each(function(d) {
+      var text = displayMode === 'name' ? d.name : d.position;
+      var textElement = d3.select(this);
+      
+      // Update font size based on circle size
+      textElement.style('font-size', Math.max(9, Math.min(14, d.radius * 0.25)) + 'px');
+      
+      wrapText(textElement, text, d.radius * 1.6);
+    });
+  }
+
+  function setDisplayMode(mode) {
+    displayMode = mode;
+    
+    // Update button states
+    d3.select('#byNameBtn').classed('active', mode === 'name');
+    d3.select('#byRoleBtn').classed('active', mode === 'role');
+    
+    // Update text display
+    updateTextDisplay();
+  }
+
+  // =============================
+  // 7) HELPERS
+  // =============================
+  function depthFill(depth){
+    var palette = ["#77DD77", "#FFD166", "#91C9FF", "#C4B5FD"];
+    return palette[depth % 4];
+  }
+  function lighten(hex, k){
+    if (k === undefined) k = 0.5;
+    var c = d3.color(hex);
+    return c ? d3.color(c).brighter(k).formatHex() : hex;
+  }
+
+  function dragStarted(event, d){
+    if (!event.active) sim.alphaTarget(0.3).restart();
+    d.fx = d.x; d.fy = d.y;
+    // Highlight this node's subtree when dragging starts
+    highlightSubtree(d.id);
+    // Update sidebar with person details
+    updateSidebar(d);
+  }
+  function dragged(event, d){
+    d.fx = event.x; d.fy = event.y;
+  }
+  function dragEnded(event, d){
+    if (!event.active) sim.alphaTarget(0);
+    d.fx = null; d.fy = null;
+    // Unhighlight when drag ends
+    resetHighlight();
+    // Keep sidebar showing the person details (don't clear on drag end)
+  }
+
+  document.getElementById('resetBtn').addEventListener('click', resetHighlight);
+  document.getElementById('jiggleBtn').addEventListener('click', function(){
+    sim.alpha(0.8).restart();
+  });
+  document.getElementById('byNameBtn').addEventListener('click', function(){
+    setDisplayMode('name');
+  });
+  document.getElementById('byRoleBtn').addEventListener('click', function(){
+    setDisplayMode('role');
+  });
+
+  sim.alpha(1).restart();
+  </script>
+</div>
+</body>
+</html>
+
